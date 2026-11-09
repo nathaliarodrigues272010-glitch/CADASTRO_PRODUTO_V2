@@ -18,29 +18,22 @@ class Produto {
 // FASE 2: Gerenciamento de Estado (Memória)
 //
 const listaDeProdutos = [];
+const CHAVE_STORAGE = "sistema_estoque_produtos";
 
-// FASE 2.1 Persistência com localStorage
-//definir uma constante para evitar erros de digitação
-//ao usarmos a chave do localStorage
-const CHAVE_STORAGE ="sistema_estoque_produtos";
-
-//1. função para Salvar os dados no navegador
-function salvarNoLocalStorage(){
+// 1. Função para Salvar os dados no navegador
+function salvarNoLocalStorage() {
     const listaEmTexto = JSON.stringify(listaDeProdutos);
-    localStorage.setItem(CHAVE_STORAGE,listaEmTexto);
+    localStorage.setItem(CHAVE_STORAGE, listaEmTexto);
 }
 
-//2. função Carregar os dados salvos quando a página abre
-function carregarDoLocalStorage(){
-    const dadosSalvos=localStorage.getItem(CHAVE_STORAGE);
+// 2. Função Carregar os dados salvos quando a página abre
+function carregarDoLocalStorage() {
+    const dadosSalvos = localStorage.getItem(CHAVE_STORAGE);
 
-    if(dadosSalvos){
-        //converte a string JSON de volta para um array
-        //de objetos genéricos
-        const produtosObjetos =JSON.parse(dadosSalvos);
-        //reinstanciar cada produto como um new Produto
-        produtosObjetos.forEach((prod)=>{
-            const produtoInstanciado = new Produto(prod.nome,prod.preco,prod.quantidade);
+    if (dadosSalvos) {
+        const produtosObjetos = JSON.parse(dadosSalvos);
+        produtosObjetos.forEach((prod) => {
+            const produtoInstanciado = new Produto(prod.nome, prod.preco, prod.quantidade);
             listaDeProdutos.push(produtoInstanciado);
         });
     }
@@ -52,6 +45,7 @@ function carregarDoLocalStorage(){
 const formProduto = document.getElementById("produto-form");
 const btnLimparTudo = document.getElementById("limpar-tabela");
 const totalEstoqueEl = document.getElementById("total-estoque");
+const campoBusca = document.getElementById("campo-busca"); // Campo de pesquisa dinâmica (V4)
 
 //
 // FASE 4: Escuta de Eventos
@@ -61,23 +55,27 @@ const totalEstoqueEl = document.getElementById("total-estoque");
 formProduto.addEventListener("submit", function (event) {
     event.preventDefault();
 
-    // Captura dos valores digitados nos campos de input
     const nomeInput = document.getElementById("nome").value;
     const precoInput = document.getElementById("preco").value;
     const quantidadeInput = document.getElementById("quantidade").value;
 
-    // Criar uma nova instância da classe Produto
     const novoProduto = new Produto(nomeInput, precoInput, quantidadeInput);
-
-    // Adiciona o novo produto ao array
     listaDeProdutos.push(novoProduto);
 
-    // Atualiza a exibição da tabela, total e limpa o formulário
+    salvarNoLocalStorage();
     atualizarInterface();
     formProduto.reset();
+    document.getElementById("nome").focus();
 });
 
-// 2. Limpar toda a tabela
+// 2. Evento de Digitação Dinâmica na Pesquisa (V4)
+if (campoBusca) {
+    campoBusca.addEventListener("input", () => {
+        atualizarInterface();
+    });
+}
+
+// 3. Limpar toda a tabela
 btnLimparTudo.addEventListener("click", function () {
     if (listaDeProdutos.length === 0) {
         alert("A tabela já está vazia!");
@@ -85,8 +83,8 @@ btnLimparTudo.addEventListener("click", function () {
     }
 
     if (confirm("Tem certeza que deseja remover todos os produtos?")) {
-        // Esvazia o array mantendo a mesma referência
         listaDeProdutos.length = 0;
+        salvarNoLocalStorage();
         atualizarInterface();
     }
 });
@@ -95,19 +93,25 @@ btnLimparTudo.addEventListener("click", function () {
 // FASE 5: Funções de Atualização e Renderização da Interface
 //
 
-// Função responsável por remover um único produto pelo índice
-function removerProduto(index) {
-    // Remove 1 elemento da lista na posição do índice
-    listaDeProdutos.splice(index, 1);
+// Função intermediária para filtrar produtos usando .filter(), .toLowerCase() e .includes() (V4)
+function obterProdutosFiltrados() {
+    const termoBusca = campoBusca ? campoBusca.value.toLowerCase().trim() : "";
+   
+    return listaDeProdutos.filter(produto =>
+        produto.nome.toLowerCase().includes(termoBusca)
+    );
+}
 
-    //salva a nova lista (sem o item removido) no localStorage
+// Função responsável por remover um único produto pelo índice real
+function removerProduto(indexReal) {
+    listaDeProdutos.splice(indexReal, 1);
     salvarNoLocalStorage();
     atualizarInterface();
 }
 
-// Função responsável por calcular e renderizar o total geral em estoque
-function atualizarTotalEstoque() {
-    const total = listaDeProdutos.reduce((acc, produto) => {
+// Função responsável por calcular e renderizar o total geral em estoque considerando apenas os itens visíveis na tela (V4)
+function atualizarTotalEstoque(produtosVisiveis) {
+    const total = produtosVisiveis.reduce((acc, produto) => {
         return acc + produto.calcularSubtotal();
     }, 0);
 
@@ -117,12 +121,23 @@ function atualizarTotalEstoque() {
 // Função responsável por re-desenhar a tabela
 function renderizarTabela() {
     const tabelaBody = document.querySelector("#tabela-produtos tbody");
+    const mensagemVazia = document.getElementById("mensagem-vazia");
 
-    // Limpa o conteúdo anterior da tabela
     tabelaBody.innerHTML = "";
 
-    // Percorre o array de produtos
-    listaDeProdutos.forEach((produto, index) => {
+    // Obtém os produtos filtrados pela busca atual (V4)
+    const produtosFiltrados = obterProdutosFiltrados();
+
+    // Mensagem caso nenhum produto seja encontrado na busca
+    if (produtosFiltrados.length === 0 && listaDeProdutos.length > 0) {
+        if (mensagemVazia) mensagemVazia.style.display = "block";
+    } else {
+        if (mensagemVazia) mensagemVazia.style.display = "none";
+    }
+
+    produtosFiltrados.forEach((produto) => {
+        // Encontra o índice real no array original `listaDeProdutos` para exclusão correta
+        const indexReal = listaDeProdutos.indexOf(produto);
         const linha = document.createElement("tr");
 
         linha.innerHTML = `
@@ -135,17 +150,21 @@ function renderizarTabela() {
             </td>
         `;
 
-        // Adiciona evento ao botão "Remover" da linha atual
         const btnRemover = linha.querySelector(".btn-remover");
-        btnRemover.addEventListener("click", () => removerProduto(index));
+        btnRemover.addEventListener("click", () => removerProduto(indexReal));
 
-        // Insere a linha criada dentro do tbody
         tabelaBody.appendChild(linha);
     });
+
+    // Atualiza o total repassando apenas os produtos filtrados/visíveis
+    atualizarTotalEstoque(produtosFiltrados);
 }
 
 // Função principal que sincroniza a tela com os dados
 function atualizarInterface() {
     renderizarTabela();
-    atualizarTotalEstoque();
 }
+
+// Inicialização ao carregar a página
+carregarDoLocalStorage();
+atualizarInterface();
